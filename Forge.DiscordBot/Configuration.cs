@@ -1,0 +1,92 @@
+﻿using System;
+using System.IO;
+using System.Text;
+using System.Threading.Tasks;
+using Forge.DiscordBot.Interfaces;
+using Newtonsoft.Json;
+
+namespace Forge.DiscordBot
+{
+    public class Configuration
+    {
+        private static readonly object _fileReadWriteLock = new object();
+        private const string EmptyJson = "{\r\n}";
+
+        public static T Get<T>(string key, ulong? guild = null) where T : CommandConfig =>
+            (T) Get(typeof(T), key, guild);
+
+        public static object Get(Type type, string key, ulong? guild = null)
+        {
+            lock (_fileReadWriteLock)
+            {
+                var directory = Path.Combine(".", "config", guild?.ToString() ?? string.Empty);
+                if (!Directory.Exists(directory))
+                {
+                    Directory.CreateDirectory(directory);
+                }
+
+                var configFile = Path.Combine(directory, $"{key}.json");
+                if (!File.Exists(configFile))
+                {
+                    using (var file = File.Create(configFile))
+                    {
+                        var content = Encoding.UTF8.GetBytes(EmptyJson);
+                        file.Write(content, 0, content.Length);
+                        file.Flush();
+                    }
+                }
+
+                var configContents = File.ReadAllText(configFile);
+
+                if (string.IsNullOrEmpty(configContents))
+                {
+                    configContents = EmptyJson;
+                }
+
+                var config = Activator.CreateInstance(type);
+                JsonConvert.PopulateObject(configContents, config,
+                    new JsonSerializerSettings {NullValueHandling = NullValueHandling.Ignore});
+
+                return config;
+            }
+        }
+
+        public static string GetJson<T>(string key, ulong? guild = null) where T : CommandConfig
+        {
+            var config = Get(typeof(T), key, guild);
+            return JsonConvert.SerializeObject(config, Formatting.Indented);
+        }
+
+        public static void Write<T>(T data, string key, ulong? guild = null) where T : CommandConfig
+        {
+            lock (_fileReadWriteLock)
+            {
+                var configFile = Path.Combine(".", "config", guild?.ToString() ?? string.Empty, $"{key}.json");
+                var directory = Path.Combine(".", "config", guild?.ToString() ?? string.Empty);
+                if (!Directory.Exists(directory))
+                {
+                    Directory.CreateDirectory(directory);
+                }
+
+                var config = JsonConvert.SerializeObject(data, Formatting.Indented);
+                File.WriteAllText(configFile, config);
+            }
+        }
+
+        public static async Task Modify<T>(string key, Func<T, Task> action, ulong? guild = null)
+            where T : CommandConfig
+        {
+            var config = Get<T>(key, guild);
+            await action(config).ConfigureAwait(false);
+            Write(config, key, guild);
+        }
+
+        public static Task Modify<T>(string key, Action<T> action, ulong? guild = null) where T : CommandConfig
+        {
+            var config = Get<T>(key, guild);
+            action(config);
+            Write(config, key, guild);
+            return Task.CompletedTask;
+        }
+    }
+}
