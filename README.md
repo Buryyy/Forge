@@ -4,8 +4,4 @@
 Discord bot written in C# for a game guild.
 
 
-# Experimental
-Currently all of the features are under development and experimental.
-
-
 
